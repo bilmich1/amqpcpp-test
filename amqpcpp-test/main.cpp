@@ -18,7 +18,7 @@ RabbitMqStreamingPlugin::RabbitMqServerConfig getServerConfig()
 int main()
 {
     const auto server_config = getServerConfig();
-    const std::string topic = "my_topic";
+    const std::string topic = "topic";
     const std::string partition_key = "po=amqpcpp-test";
     const std::string event_type_name = "event_type_name";
 
@@ -29,17 +29,24 @@ int main()
     };
 
     RabbitMqStreamingPlugin::AmqpCppStreamer streamer(server_config, error_callback);
-    streamer.connect();
 
-    for (int i = 0; i < 100000; ++i)
+    try
     {
-        if (nullptr != exception)
+        streamer.connect();
+        for (int i = 0; i < 100000; ++i)
         {
-            std::rethrow_exception(exception);
-        }
+            if (nullptr != exception)
+            {
+                std::rethrow_exception(exception);
+            }
 
-        std::string message(500, 'a'); // 500 bytes message content
-        streamer.publish(topic, partition_key, event_type_name, message);
+            std::string message(500, 'a'); // 500 bytes message content
+            streamer.publish(topic, partition_key, event_type_name, message);
+        }
+    }
+    catch (const std::exception& e)
+    {
+        std::cout << "Exception in main: " << e.what() << "\n";
     }
 
     std::cout << "Done\n";

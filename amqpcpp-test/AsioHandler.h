@@ -22,7 +22,7 @@ namespace RabbitMqStreamingPlugin
     {
     public:
 
-        AsioHandler(boost::asio::io_service& io_service, const std::string& host, uint16_t port);
+        AsioHandler(std::recursive_mutex& connection_mutex, boost::asio::io_service& io_service, const std::string& host, uint16_t port);
         ~AsioHandler() override;
 
         AsioHandler(const AsioHandler&) = delete;
@@ -49,6 +49,7 @@ namespace RabbitMqStreamingPlugin
 
         std::vector<char> input_buffer_;
         std::shared_ptr<AsioHandlerPrivate::AmqpBuffer> amqp_buffer_;
+        std::recursive_mutex& connection_mutex_;
         AMQP::Connection* connection_;
         std::deque<std::vector<char>> output_buffer_;
         bool is_writing_;

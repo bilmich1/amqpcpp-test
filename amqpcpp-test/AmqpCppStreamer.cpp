@@ -76,14 +76,14 @@ namespace RabbitMqStreamingPlugin
             io_service_ = std::make_unique<boost::asio::io_service>();
 
             connection_handler_ =
-                std::make_unique<AsioHandler>(*io_service_, server_config_.ip_address_, server_config_.port_);
+                std::make_unique<AsioHandler>(connection_mutex_, *io_service_, server_config_.ip_address_, server_config_.port_);
 
             connection_ = std::make_unique<AMQP::Connection>(
                 connection_handler_.get(),
                 AMQP::Login(server_config_.username_, server_config_.password_),
                 server_config_.vhost_);
 
-            channel_ = std::make_unique<SynchronousChannel>(*connection_);
+            channel_ = std::make_unique<SynchronousChannel>(*connection_, connection_mutex_);
 
             io_service_thread_ = std::thread([this]()
             {

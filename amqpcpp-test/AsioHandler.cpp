@@ -59,16 +59,17 @@ namespace RabbitMqStreamingPlugin
         };
     }
 
-    AsioHandler::AsioHandler(boost::asio::io_service& io_service, const std::string& host, uint16_t port) :
-        io_service_(io_service),
-        socket_(io_service),
-        timer_(io_service),
-        input_buffer_(asio_input_buffer_size__, 0),
-        amqp_buffer_(std::make_shared<AsioHandlerPrivate::AmqpBuffer>(asio_input_buffer_size__ * 2)),
-        connection_(nullptr),
-        is_writing_(false),
-        is_connected_(false),
-        should_quit_(false)
+    AsioHandler::AsioHandler(std::recursive_mutex& connection_mutex, boost::asio::io_service& io_service, const std::string& host, uint16_t port)
+        : io_service_(io_service)
+        , socket_(io_service)
+        , timer_(io_service)
+        , input_buffer_(asio_input_buffer_size__, 0)
+        , amqp_buffer_(std::make_shared<AsioHandlerPrivate::AmqpBuffer>(asio_input_buffer_size__ * 2))
+        , connection_mutex_(connection_mutex)
+        , connection_(nullptr)
+        , is_writing_(false)
+        , is_connected_(false)
+        , should_quit_(false)
     {
         doConnect(host, port);
     }
@@ -118,7 +119,10 @@ namespace RabbitMqStreamingPlugin
     void AsioHandler::onData(
         AMQP::Connection* connection, const char* data, size_t size)
     {
-        connection_ = connection;
+        {
+            std::unique_lock lock(connection_mutex_);
+            connection_ = connection;
+        }
 
         output_buffer_.push_back(std::vector<char>(data, data + size));
         if (!is_writing_ && is_connected_)
@@ -184,13 +188,17 @@ namespace RabbitMqStreamingPlugin
 
     void AsioHandler::parseData()
     {
-        if (connection_ == nullptr)
+        size_t count = 0;
         {
-            return;
-        }
+            std::unique_lock lock(connection_mutex_);
 
-        const size_t count = connection_->parse(amqp_buffer_->data(),
-            amqp_buffer_->available());
+            if (connection_ == nullptr)
+            {
+                return;
+            }
+
+            count = connection_->parse(amqp_buffer_->data(), amqp_buffer_->available());
+        }
 
         if (count == amqp_buffer_->available())
         {
@@ -220,7 +228,7 @@ namespace RabbitMqStreamingPlugin
 
     void AsioHandler::onNetworkError(boost::system::error_code error_code, const std::string& source)
     {
-        std::cout << "AsioHandler::onNetworkError: << error_code.message() << (Source: " << source << ")\n";
+        std::cout << "AsioHandler::onNetworkError: " << error_code.message() << "(Source: " << source << ")\n";
         boost::asio::detail::throw_error(error_code);
     }
 }

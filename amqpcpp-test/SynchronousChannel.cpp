@@ -4,8 +4,9 @@
 
 namespace RabbitMqStreamingPlugin
 {
-    SynchronousChannel::SynchronousChannel(AMQP::Connection& connection)
-        : operation_finished_(false)
+    SynchronousChannel::SynchronousChannel(AMQP::Connection& connection, std::recursive_mutex& connection_mutex)
+        : connection_mutex_(connection_mutex)
+        , operation_finished_(false)
         , is_in_error_state_(false)
         , channel_(&connection)
         , reliable_(channel_)
@@ -30,14 +31,14 @@ namespace RabbitMqStreamingPlugin
         std::cout << "SynchronousChannel::publish begin\n";
 
         std::unique_lock publish_lock(publish_mutex_);
-        std::unique_lock operation_lock(operation_mutex_);
+        std::unique_lock connection_lock(connection_mutex_);
         operation_finished_ = false;
 
         if (!is_in_error_state_)
         {
             std::cout << "SynchronousChannel::publish locked\n";
 
-            /*reliable_.publish(topic, partition_key, message)
+            reliable_.publish(topic, partition_key, message)
                 .onAck([this]()
             {
                 std::cout << "SynchronousChannel::publish onAck\n";
@@ -47,27 +48,27 @@ namespace RabbitMqStreamingPlugin
             {
                 std::cout << "SynchronousChannel::publish onLost\n";
                 onError("Message failed to publish!");
-            });*/
-
-            channel_.confirmSelect()
-                .onSuccess([this, &topic, &partition_key, &message]()
-            {
-                std::cout << "SynchronousChannel::publish onSuccess\n";
-                channel_.publish(topic, partition_key, message);
-            })
-                .onAck([this](uint64_t /*delivery_tag*/, bool /*multiple*/)
-            {
-                std::cout << "SynchronousChannel::publish onAck\n";
-                onSuccess();
-            })
-                .onNack([this](uint64_t /*delivery_tag*/, bool /*multiple*/, bool /*requeue*/)
-            {
-                std::cout << "SynchronousChannel::publish onNAck\n";
-                onError("Message failed to publish!");
             });
+
+            //channel_.confirmSelect()
+            //    .onSuccess([this, &topic, &partition_key, &message]()
+            //{
+            //    std::cout << "SynchronousChannel::publish onSuccess\n";
+            //    channel_.publish(topic, partition_key, message);
+            //})
+            //    .onAck([this](uint64_t /*delivery_tag*/, bool /*multiple*/)
+            //{
+            //    std::cout << "SynchronousChannel::publish onAck\n";
+            //    onSuccess();
+            //})
+            //    .onNack([this](uint64_t /*delivery_tag*/, bool /*multiple*/, bool /*requeue*/)
+            //{
+            //    std::cout << "SynchronousChannel::publish onNAck\n";
+            //    onError("Message failed to publish!");
+            //});
         }
 
-        waitForOperationToFinish(std::move(operation_lock));
+        waitForOperationToFinish(std::move(connection_lock));
     }
 
     void SynchronousChannel::waitForOperationToFinish(std::unique_lock<std::recursive_mutex> lock)
@@ -89,14 +90,14 @@ namespace RabbitMqStreamingPlugin
 
     void SynchronousChannel::onSuccess()
     {
-        std::unique_lock lock(operation_mutex_);
+        std::unique_lock lock(connection_mutex_);
         operation_finished_ = true;
         operation_finished_cv_.notify_all();
     }
 
     void SynchronousChannel::onError(const std::string& message)
     {
-        std::unique_lock lock(operation_mutex_);
+        std::unique_lock lock(connection_mutex_);
         operation_finished_ = true;
         is_in_error_state_ = true;
         error_message_ = message;

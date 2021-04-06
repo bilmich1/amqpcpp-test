@@ -30,7 +30,7 @@ namespace RabbitMqStreamingPlugin
     class SynchronousChannel
     {
     public:
-        SynchronousChannel(AMQP::Connection& connection);
+        SynchronousChannel(AMQP::Connection& connection, std::recursive_mutex& connection_mutex);
         ~SynchronousChannel();
 
         void stop();
@@ -43,8 +43,7 @@ namespace RabbitMqStreamingPlugin
         void onError(const std::string& message);
 
         std::mutex publish_mutex_;
-        // recursive because amqp-cpp does direct call if the response is already available
-        std::recursive_mutex operation_mutex_;
+        std::recursive_mutex& connection_mutex_;
         std::condition_variable_any operation_finished_cv_;
         bool operation_finished_;
         bool is_in_error_state_;
