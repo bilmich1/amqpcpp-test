@@ -53,9 +53,6 @@ namespace RabbitMqStreamingPlugin
         const RabbitMqServerConfig server_config_;
         const OnErrorCallback error_callback_;
 
-        // mutex shared by SynchronousChannel and AsioHandler
-        // recursive because AMQP-CPP does direct call
-        std::recursive_mutex connection_mutex_;
         std::unique_ptr<AMQP::ConnectionHandler> connection_handler_;
         std::unique_ptr<AMQP::Connection> connection_;
         std::unique_ptr<SynchronousChannel> channel_;

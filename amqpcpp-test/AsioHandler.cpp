@@ -59,13 +59,12 @@ namespace RabbitMqStreamingPlugin
         };
     }
 
-    AsioHandler::AsioHandler(std::recursive_mutex& connection_mutex, boost::asio::io_service& io_service, const std::string& host, uint16_t port)
+    AsioHandler::AsioHandler(boost::asio::io_service& io_service, const std::string& host, uint16_t port)
         : io_service_(io_service)
         , socket_(io_service)
         , timer_(io_service)
         , input_buffer_(asio_input_buffer_size__, 0)
         , amqp_buffer_(std::make_shared<AsioHandlerPrivate::AmqpBuffer>(asio_input_buffer_size__ * 2))
-        , connection_mutex_(connection_mutex)
         , connection_(nullptr)
         , is_writing_(false)
         , is_connected_(false)
@@ -119,10 +118,7 @@ namespace RabbitMqStreamingPlugin
     void AsioHandler::onData(
         AMQP::Connection* connection, const char* data, size_t size)
     {
-        {
-            std::unique_lock lock(connection_mutex_);
-            connection_ = connection;
-        }
+        connection_ = connection;
 
         output_buffer_.push_back(std::vector<char>(data, data + size));
         if (!is_writing_ && is_connected_)
@@ -133,11 +129,11 @@ namespace RabbitMqStreamingPlugin
 
     void AsioHandler::doRead()
     {
-        std::cout << "AsioHandler::doRead begin\n";
+        std::cout << std::this_thread::get_id() << ": AsioHandler::doRead begin\n";
         socket_.async_receive(boost::asio::buffer(input_buffer_),
             [this](boost::system::error_code ec, std::size_t length)
         {
-            std::cout << "AsioHandler::doRead async_receive\n";
+            std::cout << std::this_thread::get_id() << ": AsioHandler::doRead async_receive\n";
             if (!ec)
             {
                 amqp_buffer_->write(input_buffer_.data(), length);
@@ -153,13 +149,13 @@ namespace RabbitMqStreamingPlugin
 
     void AsioHandler::doWrite()
     {
-        std::cout << "AsioHandler::doWrite begin\n";
+        std::cout << std::this_thread::get_id() << ": AsioHandler::doWrite begin\n";
         is_writing_ = true;
         boost::asio::async_write(socket_,
             boost::asio::buffer(output_buffer_.front()),
             [this](boost::system::error_code ec, std::size_t length)
         {
-            std::cout << "AsioHandler::doWrite async_write\n";
+            std::cout << std::this_thread::get_id() << ": AsioHandler::doWrite async_write\n";
             if (!ec)
             {
                 output_buffer_.pop_front();
@@ -188,17 +184,12 @@ namespace RabbitMqStreamingPlugin
 
     void AsioHandler::parseData()
     {
-        size_t count = 0;
+        if (connection_ == nullptr)
         {
-            std::unique_lock lock(connection_mutex_);
-
-            if (connection_ == nullptr)
-            {
-                return;
-            }
-
-            count = connection_->parse(amqp_buffer_->data(), amqp_buffer_->available());
+            return;
         }
+
+        const auto count = connection_->parse(amqp_buffer_->data(), amqp_buffer_->available());
 
         if (count == amqp_buffer_->available())
         {
@@ -212,13 +203,13 @@ namespace RabbitMqStreamingPlugin
 
     void AsioHandler::onError(AMQP::Connection* connection, const char* message)
     {
-        std::cout << "AsioHandler::onError: " << message << "\n";
+        std::cout << std::this_thread::get_id() << ": AsioHandler::onError: " << message << "\n";
         throw std::runtime_error(message);
     }
 
     void AsioHandler::onClosed(AMQP::Connection* connection)
     {
-        std::cout << "AsioHandler::onClosed\n";
+        std::cout << std::this_thread::get_id() << ": AsioHandler::onClosed\n";
         should_quit_ = true;
         if (!is_writing_)
         {
@@ -228,7 +219,7 @@ namespace RabbitMqStreamingPlugin
 
     void AsioHandler::onNetworkError(boost::system::error_code error_code, const std::string& source)
     {
-        std::cout << "AsioHandler::onNetworkError: " << error_code.message() << "(Source: " << source << ")\n";
+        std::cout << std::this_thread::get_id() << ": AsioHandler::onNetworkError: " << error_code.message() << "(Source: " << source << ")\n";
         boost::asio::detail::throw_error(error_code);
     }
 }

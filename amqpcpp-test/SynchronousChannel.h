@@ -3,6 +3,8 @@
 #define NOMINMAX
 #include <amqpcpp.h>
 
+#include <boost/asio/io_service.hpp>
+
 #include <condition_variable>
 #include <mutex>
 
@@ -30,20 +32,25 @@ namespace RabbitMqStreamingPlugin
     class SynchronousChannel
     {
     public:
-        SynchronousChannel(AMQP::Connection& connection, std::recursive_mutex& connection_mutex);
+        SynchronousChannel(boost::asio::io_service& io_service, AMQP::Connection& connection);
         ~SynchronousChannel();
 
         void stop();
 
-        void publish(const std::string& topic, const std::string& partition_key, const AMQP::Envelope& message);
+        void publish(const std::string& topic,
+            const std::string& partition_key,
+            const std::string& event_type_name,
+            const std::string& message);
 
     private:
         void waitForOperationToFinish(std::unique_lock<std::recursive_mutex> lock);
         void onSuccess();
         void onError(const std::string& message);
 
+        boost::asio::io_service& io_service_;
+
         std::mutex publish_mutex_;
-        std::recursive_mutex& connection_mutex_;
+        std::recursive_mutex operation_mutex_;
         std::condition_variable_any operation_finished_cv_;
         bool operation_finished_;
         bool is_in_error_state_;
